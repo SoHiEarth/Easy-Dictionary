@@ -11,9 +11,23 @@
 SDL_Window*     window = nullptr;
 SDL_Renderer*   renderer = nullptr;
 bool            running = false;
-SDL_Texture*    LoadImageFromPath(std::string Path);
 int             currentSelectedButton = 0;
 int             mousePosX, mousePosY;
+SDL_Texture* LoadImageFromPath(std::string Path, SDL_Renderer* customRenderer = renderer)
+{
+    SDL_Surface* surface = IMG_Load(Path.c_str());
+    if (surface == NULL)
+    {
+        std::cerr << "[ERROR] APP::RESLOAD Failed to load resource " << Path << std::endl << IMG_GetError() << std::endl;
+    }
+    SDL_Texture* texture = SDL_CreateTextureFromSurface(customRenderer, surface);
+    if (texture == NULL)
+    {
+        std::cerr << "[ERROR] APP::RESLOAD Failed to load resource " << Path << std::endl << IMG_GetError() << std::endl;
+    }
+    SDL_FreeSurface(surface);
+    return texture;
+}
 SDL_Texture*    map;
 SDL_Rect        mapRect { 0, 125, 600, 575 };
 SDL_Color       white { 0,0,0, 255 };
@@ -49,7 +63,7 @@ struct Entry
     int         LocY = 0;
 };
 Entry*          currentEntry;
-Entry*          CreateEntry(std::string name, std::string photoPath, std::string desc, std::string desc2, std::string LocName, float LocX, float LocY)
+Entry*          CreateEntry(std::string name, std::string photoPath, std::string desc, std::string desc2, std::string LocName)
 {
     Entry* entry = new Entry;
     entry->Name = name;
@@ -57,8 +71,8 @@ Entry*          CreateEntry(std::string name, std::string photoPath, std::string
     entry->desc = desc;
     entry->desc2 = desc2;
     entry->LocName = LocName;
-    entry->LocX = LocX;
-    entry->LocY = LocY;
+    entry->LocX = 100.0;
+    entry->LocY = 100.0;
     return entry;
 }
 std::vector<Entry*> Entries;
@@ -170,22 +184,8 @@ namespace CoreMenu
     }
     
 }
-SDL_Texture* LoadImageFromPath(std::string Path)
-{
-    SDL_Surface* surface = IMG_Load(Path.c_str());
-    if (surface == NULL)
-    {
-        std::cerr << "[ERROR] APP::RESLOAD Failed to load resource " << Path << std::endl << IMG_GetError() << std::endl;
-    }
-    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
-    if (texture == NULL)
-    {
-        std::cerr << "[ERROR] APP::RESLOAD Failed to load resource " << Path << std::endl << IMG_GetError() << std::endl;
-    }
-    SDL_FreeSurface(surface);
-    return texture;
-}
-SDL_Texture* RenderText_Old(const char* text, const SDL_Color& color = CoreMenu::titleTextColor, int size = 64)
+
+SDL_Texture* RenderText_Old(const char* text, const SDL_Color& color = CoreMenu::titleTextColor, int size = 64, SDL_Renderer* customRenderer = renderer)
 {
     TTF_Font* font = size == 64 ? CoreMenu::font64 : CoreMenu::font44;
     SDL_Surface* surface = TTF_RenderText_Blended_Wrapped(font, text, color, 0);
@@ -193,14 +193,14 @@ SDL_Texture* RenderText_Old(const char* text, const SDL_Color& color = CoreMenu:
     {
         std::cerr << "[ERROR] APP::RESLOAD Failed to render text" << std::endl << TTF_GetError() << std::endl;
     }
-    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+    SDL_Texture* texture = SDL_CreateTextureFromSurface(customRenderer, surface);
     if (texture == NULL)
     {
         std::cerr << "[ERROR] APP::RESLOAD_TEXT Failed to render text." << std::endl << TTF_GetError() << std::endl;
     }
     return texture;
 }
-SDL_Texture* RenderText(const char* text, const SDL_Rect& rect, const SDL_Color& color = CoreMenu::titleTextColor, int size = 64)
+SDL_Texture* RenderText(const char* text, const SDL_Rect& rect, const SDL_Color& color = CoreMenu::titleTextColor, int size = 64, SDL_Renderer* customRenderer = renderer)
 {
     TTF_Font* font = size == 64 ? CoreMenu::font64 : CoreMenu::font44;
     SDL_Surface* surface = TTF_RenderText_Blended_Wrapped(font, text, color, 0);
@@ -208,7 +208,7 @@ SDL_Texture* RenderText(const char* text, const SDL_Rect& rect, const SDL_Color&
     {
         std::cerr << "[ERROR] APP::RESLOAD Failed to render text" << std::endl << TTF_GetError() << std::endl;
     }
-    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+    SDL_Texture* texture = SDL_CreateTextureFromSurface(customRenderer, surface);
     if (texture == NULL)
     {
         std::cerr << "[ERROR] APP::RESLOAD_TEXT Failed to render text." << std::endl << TTF_GetError() << std::endl;
@@ -216,12 +216,12 @@ SDL_Texture* RenderText(const char* text, const SDL_Rect& rect, const SDL_Color&
     SDL_FreeSurface(surface);
     if (color.a != 255)
     {
-        SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawBlendMode(customRenderer, SDL_BLENDMODE_BLEND);
     }
-    SDL_RenderCopy(renderer, texture, NULL, &rect);
+    SDL_RenderCopy(customRenderer, texture, NULL, &rect);
     if (color.a != 255)
     {
-        SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+        SDL_SetRenderDrawBlendMode(customRenderer, SDL_BLENDMODE_NONE);
     }
     SDL_DestroyTexture(texture);
     return texture;
@@ -229,7 +229,6 @@ SDL_Texture* RenderText(const char* text, const SDL_Rect& rect, const SDL_Color&
 
 void NewEntryWizard()
 {
-    CoreMenu::ReloadMenuAssets();
     SDL_Event event;
     std::string newEntry_Name       = "Name";
     std::string newEntry_Path       = "Path";
@@ -272,6 +271,9 @@ void NewEntryWizard()
     SDL_Rect lyFTR              { 350, 450, 200, 44 };
     int lyFRx;
 
+    SDL_Window* promptWindow = SDL_CreateWindow("New...", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 900, 600, SDL_WINDOW_TOOLTIP);
+    SDL_Renderer* promptRenderer = SDL_CreateRenderer(promptWindow, -1, SDL_RENDERER_ACCELERATED);
+
     while (state == State_NewEntry)
     {
         while (SDL_PollEvent(&event))
@@ -279,6 +281,8 @@ void NewEntryWizard()
             SDL_GetMouseState(&mousePosX, &mousePosY);
             if (event.type == SDL_QUIT)
             {
+                SDL_DestroyRenderer(promptRenderer);
+                SDL_DestroyWindow(promptWindow);
                 state == State_Quit;
                 running = false;
                 return;
@@ -903,6 +907,33 @@ void NewEntryWizard()
                         }
                         break;
 
+                    case SDLK_0:
+                        switch (currentFocusTextField)
+                        {
+                            case 0:
+                                newEntry_Name += "0";
+                                break;
+                            case 1:
+                                newEntry_Desc += "0";
+                                break;
+                            case 2:
+                                newEntry_Desc2 += "0";
+                                break;
+                            case 3:
+                                newEntry_Path += "0";
+                                break;
+                            case 4:
+                                newEntry_LocName += "0";
+                                break;
+                            case 5:
+                                newEntry_LocX += "0";
+                                break;
+                            case 6:
+                                newEntry_LocY += "0";
+                                break;
+                        }
+                        break;
+
                     case SDLK_1:
                         switch (currentFocusTextField)
                         {
@@ -1007,6 +1038,66 @@ void NewEntryWizard()
                         break;
                       }
                       break;
+                    case SDLK_SPACE:
+                        switch (currentFocusTextField)
+                        {
+                            case 0:
+                                newEntry_Name += " ";
+                                break;
+                            case 1:
+                                newEntry_Desc += " ";
+                                break;
+                            case 2:
+                                newEntry_Desc2 += " ";
+                                break;
+                            case 3:
+                                newEntry_Path += " ";
+                                break;
+                            case 4:
+                                newEntry_LocName += " ";
+                                break;
+                        }
+                        break;
+                    case SDLK_UNDERSCORE:
+                        switch (currentFocusTextField)
+                        {
+                            case 0:
+                                newEntry_Name += "_";
+                                break;
+                            case 1:
+                                newEntry_Desc += "_";
+                                break;
+                            case 2:
+                                newEntry_Desc2 += "_";
+                                break;
+                            case 3:
+                                newEntry_Path += "_";
+                                break;
+                            case 4:
+                                newEntry_LocName += "_";
+                                break;
+                        }
+                        break;
+                    case SDLK_SLASH:
+                        switch (currentFocusTextField)
+                        {
+                            case 0:
+                                newEntry_Name += "/";
+                                break;
+                            case 1:
+                                newEntry_Desc += "/";
+                                break;
+                            case 2:
+                                newEntry_Desc2 += "/";
+                                break;
+                            case 3:
+                                newEntry_Path += "/";
+                                break;
+                            case 4:
+                                newEntry_LocName += "/";
+                                break;
+                        }
+                        break;
                     case SDLK_RETURN:
                         if (newEntry_Name == "")
                         {
@@ -1033,20 +1124,12 @@ void NewEntryWizard()
                             errorTextField = 4;
                             break;
                         }
-                        else if (newEntry_LocX == "LocX")
-                        {
-                            errorTextField = 5;
-                            break;
-                        }
-                        else if (newEntry_LocY == "LocY")
-                        {
-                            errorTextField = 6;
-                            break;
-                        }
-                        Entries.push_back(CreateEntry(newEntry_Name, newEntry_Path, newEntry_Desc, newEntry_Desc2, newEntry_LocName, std::stoi(newEntry_LocX), std::stoi(newEntry_LocY)));
+                        Entries.push_back(CreateEntry(newEntry_Name, newEntry_Path, newEntry_Desc, newEntry_Desc2, newEntry_LocName));
                         state=State_Dict;
                         break;
                     case SDLK_ESCAPE:
+                        SDL_DestroyRenderer(promptRenderer);
+                        SDL_DestroyWindow(promptWindow);
                         state = State_Home;
                         currentSelectedButton = 0;
                         return;
@@ -1056,48 +1139,45 @@ void NewEntryWizard()
         }
 
         
-        SDL_SetRenderDrawColor(renderer, 245, 245, 255, 255);
-        SDL_RenderClear(renderer);
+        SDL_SetRenderDrawColor(promptRenderer, 245, 245, 255, 255);
+        SDL_RenderClear(promptRenderer);
 
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        SDL_SetRenderDrawColor(promptRenderer, 255, 255, 255, 255);
 
-        if (errorTextField == 0) SDL_SetRenderDrawColor(renderer, 200, 0, 0, 150);
-        SDL_RenderFillRect(renderer, &nameFieldRect);
-        if (errorTextField == 0) SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        if (errorTextField == 0) SDL_SetRenderDrawColor(promptRenderer, 200, 0, 0, 150);
+        SDL_RenderFillRect(promptRenderer, &nameFieldRect);
+        if (errorTextField == 0) SDL_SetRenderDrawColor(promptRenderer, 255, 255, 255, 255);
         
-        if (errorTextField == 1) SDL_SetRenderDrawColor(renderer, 200, 0, 0, 150);
-        SDL_RenderFillRect(renderer, &DescFieldRect);
-        if (errorTextField == 1) SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        if (errorTextField == 1) SDL_SetRenderDrawColor(promptRenderer, 200, 0, 0, 150);
+        SDL_RenderFillRect(promptRenderer, &DescFieldRect);
+        if (errorTextField == 1) SDL_SetRenderDrawColor(promptRenderer, 255, 255, 255, 255);
         
-        if (errorTextField == 2) SDL_SetRenderDrawColor(renderer, 200, 0, 0, 150);
-        SDL_RenderFillRect(renderer, &Desc2FieldRect);
-        if (errorTextField == 2) SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        if (errorTextField == 2) SDL_SetRenderDrawColor(promptRenderer, 200, 0, 0, 150);
+        SDL_RenderFillRect(promptRenderer, &Desc2FieldRect);
+        if (errorTextField == 2) SDL_SetRenderDrawColor(promptRenderer, 255, 255, 255, 255);
          
-        if (errorTextField == 3) SDL_SetRenderDrawColor(renderer, 200, 0, 0, 150);
-        SDL_RenderFillRect(renderer, &PathFieldRect);
-        if (errorTextField == 3) SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        if (errorTextField == 3) SDL_SetRenderDrawColor(promptRenderer, 200, 0, 0, 150);
+        SDL_RenderFillRect(promptRenderer, &PathFieldRect);
+        if (errorTextField == 3) SDL_SetRenderDrawColor(promptRenderer, 255, 255, 255, 255);
 
-        if (errorTextField == 4) SDL_SetRenderDrawColor(renderer, 200, 0, 0, 150);
-        SDL_RenderFillRect(renderer, &LocNameFieldRect);
-        if (errorTextField == 4) SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-        
-        SDL_RenderFillRect(renderer, &LocXFieldRect);
-        SDL_RenderFillRect(renderer, &LocYFieldRect);
+        if (errorTextField == 4) SDL_SetRenderDrawColor(promptRenderer, 200, 0, 0, 150);
+        SDL_RenderFillRect(promptRenderer, &LocNameFieldRect);
+        if (errorTextField == 4) SDL_SetRenderDrawColor(promptRenderer, 255, 255, 255, 255);
 
         if (mousePosX <= 50+500 && mousePosX >= 50 && mousePosY <= 200+44 && mousePosY >= 200)
         {
             currentFocusTextField = 0;
-            nameField = RenderText(newEntry_Name.c_str(), nFTR, focusedTextFieldColor);
+            nameField = RenderText(newEntry_Name.c_str(), nFTR, focusedTextFieldColor, 64, promptRenderer);
         }
         else
         {
-            nameField = RenderText(newEntry_Name.c_str(), nFTR, normalTextFieldColor);
+            nameField = RenderText(newEntry_Name.c_str(), nFTR, normalTextFieldColor, 64, promptRenderer);
         }
 
         if (mousePosX <= 50+500 && mousePosX >= 50 && mousePosY <= 250+44 && mousePosY >= 250)
         {
             currentFocusTextField = 1;
-            descField = RenderText(newEntry_Desc.c_str(), dFTR, focusedTextFieldColor);
+            descField = RenderText(newEntry_Desc.c_str(), dFTR, focusedTextFieldColor, 64, promptRenderer);
         }
         else
         {
@@ -1107,57 +1187,38 @@ void NewEntryWizard()
         if (mousePosX <= 50+500 && mousePosX >= 50 && mousePosY <= 300+44 && mousePosY >= 300)
         {
             currentFocusTextField = 2;
-            desc2Field = RenderText(newEntry_Desc2.c_str(), d2FTR, focusedTextFieldColor);
+            desc2Field = RenderText(newEntry_Desc2.c_str(), d2FTR, focusedTextFieldColor, 64, promptRenderer);
         }
         else
         {
-            desc2Field = RenderText(newEntry_Desc2.c_str(), d2FTR, normalTextFieldColor);
+            desc2Field = RenderText(newEntry_Desc2.c_str(), d2FTR, normalTextFieldColor, 64, promptRenderer);
         }
 
         if (mousePosX <= 50+500 && mousePosX >= 50 && mousePosY <= 350+44 && mousePosY >= 350)
         {
             currentFocusTextField = 3;
-            pathField = RenderText(newEntry_Path.c_str(), pFTR, focusedTextFieldColor);
+            pathField = RenderText(newEntry_Path.c_str(), pFTR, focusedTextFieldColor, 64, promptRenderer);
         }
         else
         {
-            pathField = RenderText(newEntry_Path.c_str(), pFTR, normalTextFieldColor);
+            pathField = RenderText(newEntry_Path.c_str(), pFTR, normalTextFieldColor, 64, promptRenderer);
         }
 
         if (mousePosX <= 50+500 && mousePosX >= 50 && mousePosY <= 400+44 && mousePosY >= 400)
         {
             currentFocusTextField = 4;
-            locNameField = RenderText(newEntry_LocName.c_str(), lnFTR, focusedTextFieldColor);
+            locNameField = RenderText(newEntry_LocName.c_str(), lnFTR, focusedTextFieldColor, 64, promptRenderer);
         }
         else
         {
-            locNameField = RenderText(newEntry_LocName.c_str(), lnFTR, normalTextFieldColor);
+            locNameField = RenderText(newEntry_LocName.c_str(), lnFTR, normalTextFieldColor, 64, promptRenderer);
         }
 
-        if (mousePosX <= 50+200 && mousePosX >= 50 && mousePosY <= 450+44 && mousePosY >= 450)
-        {
-            currentFocusTextField = 5;
-            LocXField = RenderText(newEntry_LocX.c_str(), lxFTR, focusedTextFieldColor);
-        }
-        else
-        {
-            LocXField = RenderText(newEntry_LocX.c_str(), lxFTR, normalTextFieldColor);
-        }
-
-        if (mousePosX <= 350+200 && mousePosX >= 350 && mousePosY <= 450+44 && mousePosY >= 450)
-        {
-            currentFocusTextField = 6;
-            LocYField = RenderText(newEntry_LocY.c_str(), lyFTR, focusedTextFieldColor);
-        }
-        else
-        {
-            LocYField = RenderText(newEntry_LocY.c_str(), lyFTR, normalTextFieldColor);
-        }
-
-        CoreMenu::RenderMenu();
-        SDL_RenderPresent(renderer);
+        SDL_RenderPresent(promptRenderer);
         SDL_Delay(1000/60);
     }
+    SDL_DestroyRenderer(promptRenderer);
+    SDL_DestroyWindow(promptWindow);
 }
 
 SDL_Color black { 0,0,0, 255 };
@@ -1182,7 +1243,7 @@ void LoadHome()
 void GoHome()
 {
     CoreMenu::ReloadMenuAssets();
-    
+    SDL_SetWindowTitle(window, "Nishimizu - Home");
     SDL_Event event;
     while (state == State_Home)
     {
@@ -1270,18 +1331,21 @@ void GoHome()
 
 void LoadMap()
 {
-    map = LoadImageFromPath("mapSample.png");
+    std::string mapPath = "mapSample.png";
+    map = LoadImageFromPath(mapPath);
 
 }
 
 void GoMap()
 {
     CoreMenu::ReloadMenuAssets();
-
+    SDL_SetWindowTitle(window, "fkishimizu - Map");
     SDL_Event event;
     
     while (state == State_Map)
     {
+        int charterX, charterY;
+        bool up=false;bool down=false;bool left = false;bool right=false;
         while (SDL_PollEvent(&event))
         {
             SDL_GetMouseState(&mousePosX, &mousePosY);
@@ -1329,9 +1393,26 @@ void GoMap()
                         running = false;
                         return;
                         break;
+                    case SDLK_w:
+                        up=true;
+                        break;
+                    case SDLK_s:
+                        down=true;
+                        break;
+                    case SDLK_a:
+                        left=true;
+                        break;
+                    case SDLK_d:
+                        right=true;
+                        break;
                 }
             }
         }
+
+        if (up) {charterY-=5;}
+        if (down) {charterY+=5;}
+        if (left) {charterX+=5;}
+        if (right) {charterX-=5;}
 
         switch (currentSelectedButton)
         {
@@ -1351,11 +1432,53 @@ void GoMap()
 
         SDL_RenderCopy(renderer, map, NULL, &mapRect);
 
-        for (const auto entry : Entries)
+        for (Entry* entry : Entries)
         {
+            if (entry->LocName == "omiya station")
+            {
+                entry->LocX = 475;
+                entry->LocY = 288;
+            }
+            if (entry->LocName == "omiya kokusai")
+            {
+                entry->LocX = 340;
+                entry->LocY = 383;
+            }
+            if (entry->LocName == "omiya country club")
+            {
+                entry->LocX = 100;
+                entry->LocY = 148;
+            }
+            if (entry->LocName == "omiya park")
+            {
+                entry->LocX = 540;
+                entry->LocY = 158;
+            }
+            if (entry->LocName == "saitama shintoshin")
+            {
+                entry->LocX = 530;
+                entry->LocY = 408;
+            }
+            if (entry->LocName == "yono")
+            {
+                entry->LocX = 560;
+                entry->LocY = 493;
+            }
+            if (entry->LocName == "kitaurawa")
+            {
+                entry->LocX = 595;
+                entry->LocY = 608;
+            }
             SDL_Rect rect { entry->LocX, entry->LocY, 50, 50 };
-            SDL_RenderCopy(renderer, LoadImageFromPath(entry->photoPath), NULL, &rect);
+            SDL_Texture* entryPhoto = LoadImageFromPath(entry->photoPath);
+            SDL_RenderCopy(renderer, entryPhoto, NULL, &rect);
+            SDL_DestroyTexture(entryPhoto);
         }
+
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_Rect charterRect { charterX, charterY, 50, 50 };
+        SDL_RenderFillRect(renderer, &charterRect);
+        std::cout << "X: " << charterX << " Y: " << charterY << "\n";
 
         CoreMenu::RenderMenu();
         SDL_RenderPresent(renderer);
@@ -1383,7 +1506,7 @@ SDL_Rect entryImageRect { 90, 150, 200, 400 };
 void GoDict()
 {
     CoreMenu::ReloadMenuAssets();
-
+    SDL_SetWindowTitle(window, "Nishimizu - Dictionary");
     SDL_Event event;
     while (state == State_Dict)
     {
@@ -1515,8 +1638,8 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 {
     SDL_Init(SDL_INIT_EVERYTHING);
     TTF_Init();
-    IMG_Init(IMG_INIT_PNG);
-    window = SDL_CreateWindow("Ohnishi Nishimizu", 
+    IMG_Init(IMG_INIT_PNG || IMG_INIT_JPG || IMG_INIT_WEBP);
+    window = SDL_CreateWindow("Nishimizu - Loading", 
         SDL_WINDOWPOS_UNDEFINED,
         SDL_WINDOWPOS_UNDEFINED,
         600,
@@ -1534,6 +1657,7 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 
     while (running)
     {
+        SDL_SetWindowTitle(window, "Ikeda - Loading");
         switch (state)
         {
             case State_Home:
